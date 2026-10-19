@@ -1,0 +1,13 @@
+# Copy to local.mk (which git ignores) and set your own identity.
+#
+# Signing with a real certificate is what stops macOS asking for the camera
+# after every rebuild: camera permission is remembered against the signature's
+# designated requirement, which for a certificate is the team and bundle
+# identifier, and for an ad hoc signature is the hash of that exact build.
+#
+# List yours with:   security find-identity -v -p codesigning
+#
+# "Developer ID Application" can also be notarised for distribution;
+# "Apple Development" is enough for your own machine.
+
+SIGN_IDENTITY = Developer ID Application: Your Name (TEAMID)

@@ -43,11 +43,29 @@ make test       # the FiveAM suite (geometry; no camera or window server needed)
 ```
 
 `OBJC_DIR` and `MACOS_APP_DIR` override where the Makefile looks for the two
-libraries. `SIGN_IDENTITY="Developer ID Application: …"` signs with a real
-identity; otherwise the bundle is signed ad hoc.
+libraries.
 
 The first time the preview opens, macOS asks for permission to use the camera.
 The picture appears as soon as you allow it, without another click.
+
+### Signing, so it asks only once
+
+Without a signing identity the bundle is signed ad hoc, and macOS asks for the
+camera again after **every** rebuild: an ad hoc signature is a hash of that
+exact build, so each build is a new app to it. Signed with a certificate, the
+permission is remembered against your team and the bundle identifier instead,
+and survives rebuilds.
+
+```
+cp local.mk.example local.mk     # git ignores local.mk
+security find-identity -v -p codesigning
+# then set SIGN_IDENTITY in local.mk to one of those
+```
+
+A "Developer ID Application" certificate can also be notarised for
+distribution; "Apple Development" is enough for your own machine. Signing with
+a certificate timestamps the signature, so `make app` then needs the network.
+`make app SIGN_IDENTITY="…"` works for a one-off.
 
 ## Why a bundle
 

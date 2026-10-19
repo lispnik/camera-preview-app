@@ -20,7 +20,14 @@ OBJC_DIR ?= $(HOME)/Projects/common-lisp/objc
 MACOS_APP_DIR ?= $(HOME)/Projects/common-lisp/asdf-macos-app
 APPS ?= $(HOME)/Applications
 
-# Empty means ad hoc: builds anywhere, runs locally, cannot be notarised.
+# Machine-specific settings, kept out of git: in practice, this machine's
+# signing identity.  See local.mk.example.
+-include local.mk
+
+# Empty means ad hoc: builds anywhere, runs locally, cannot be notarised -- and
+# macOS asks for the camera again after every build, because an ad hoc
+# signature is a hash of the code and so a new identity each time.  A real
+# certificate's identity survives rebuilds.
 SIGN_IDENTITY ?=
 export CAMERA_PREVIEW_SIGN_IDENTITY = $(SIGN_IDENTITY)
 
@@ -46,7 +53,8 @@ all: app
 app: $(APP_STAMP)
 
 $(APP_STAMP): camera-preview-app.asd camera-preview-app-bundle.asd \
-              $(wildcard src/*.lisp) etc/entitlements.plist res/icon.png
+              $(wildcard src/*.lisp) etc/entitlements.plist res/icon.png \
+              $(wildcard local.mk)
 	$(SBCL) --eval '(asdf:make :camera-preview-app-bundle)'
 	@touch $(APP_STAMP)
 	@echo "built $(APP)"
