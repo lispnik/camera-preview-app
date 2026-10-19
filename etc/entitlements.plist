@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The three keys any SBCL image needs under the hardened runtime:
+	     asdf-macos-app's :sbcl-default, spelled out because a pathname
+	     replaces that set rather than adding to it. -->
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<!-- The reason this file exists.  Under the hardened runtime a process
+	     without it is refused the camera outright, with no prompt -
+	     NSCameraUsageDescription alone is not enough. -->
+	<key>com.apple.security.device.camera</key>
+	<true/>
+</dict>
+</plist>
