@@ -3,7 +3,7 @@
 #   make            build "build/Camera Preview.app"
 #   make run        build the app and open it
 #   make bin        build bin/camera-preview, the loose binary
-#   make app-ecl    build "build/ecl/Camera Preview ECL.app" with lispnik/ecl
+#   make app-ecl    build "build/ecl/Preview yourself.app" with lispnik/ecl
 #   make run-ecl    build that and open it
 #   make mas-ecl    the ECL app as a signed Mac App Store .pkg
 #   make testflight-ecl   validate that .pkg and upload it to TestFlight
@@ -20,6 +20,7 @@
 # supplies cffi, fiveam and the rest (`cd $(OBJC_DIR) && ocicl install').
 
 LISP ?= sbcl
+space := $(subst ,, )
 OBJC_DIR ?= $(HOME)/Projects/common-lisp/objc
 MACOS_APP_DIR ?= $(HOME)/Projects/common-lisp/asdf-macos-app
 APPS ?= $(HOME)/Applications
@@ -101,7 +102,9 @@ ECL_BUNDLE_ID = com.burnsidemk.camera-preview-ecl
 # of the same short version.  The time, so two uploads from one commit -- a
 # rejected build fixed and sent again -- still differ.
 ECL_BUILD := $(shell date +%Y%m%d.%H%M)
-ECL_APP = build/ecl/Camera Preview ECL.app
+# The name it has in App Store Connect, and so in Finder and the menu bar.
+ECL_NAME = Preview yourself
+ECL_APP = build/ecl/$(ECL_NAME).app
 ECL_APP_STAMP = build/ecl/.app-stamp
 ECL_LIBECL = $(notdir $(firstword $(shell otool -L $(ECL) | sed -n 's|.*@rpath/\(libecl[^ ]*\).*|\1|p')))
 
@@ -132,8 +135,10 @@ $(ECL_APP_STAMP): build/ecl/camera-preview $(APP_STAMP) etc/entitlements-ecl.pli
 	@# Answers App Store Connect's export compliance question in advance:
 	@# nothing here encrypts anything.
 	plutil -replace ITSAppUsesNonExemptEncryption -bool NO "$(ECL_APP)/Contents/Info.plist"
-	plutil -replace CFBundleName -string "Camera Preview ECL" "$(ECL_APP)/Contents/Info.plist"
-	plutil -replace CFBundleDisplayName -string "Camera Preview ECL" "$(ECL_APP)/Contents/Info.plist"
+	plutil -replace CFBundleName -string "$(ECL_NAME)" "$(ECL_APP)/Contents/Info.plist"
+	plutil -replace CFBundleDisplayName -string "$(ECL_NAME)" "$(ECL_APP)/Contents/Info.plist"
+	@# The camera prompt names the app, so the sentence in it must too.
+	plutil -replace NSCameraUsageDescription -string "$(ECL_NAME) shows your camera so you can check how you look before a meeting. Nothing is recorded or sent anywhere." "$(ECL_APP)/Contents/Info.plist"
 	@# libecl from the bundle, not from the ECL tree: the link left an
 	@# absolute LC_RPATH to $(ECL_PREFIX)/lib, which would work here and
 	@# nowhere else.
@@ -166,8 +171,8 @@ run-ecl: app-ecl
 # ASC_KEY_ID and ASC_ISSUER_ID; see local.mk.example.
 
 MAS_DIR = build/mas
-MAS_APP = $(MAS_DIR)/Camera Preview ECL.app
-MAS_PKG = $(MAS_DIR)/Camera-Preview-ECL.pkg
+MAS_APP = $(MAS_DIR)/$(ECL_NAME).app
+MAS_PKG = $(MAS_DIR)/$(subst $(space),-,$(ECL_NAME)).pkg
 MAS_ENTITLEMENTS = $(MAS_DIR)/entitlements.plist
 # The team, from the identity's "(TEAMID)" suffix.
 TEAM_ID = $(shell echo '$(MAS_IDENTITY)' | sed -n 's/.*(\([A-Z0-9]*\)).*/\1/p')

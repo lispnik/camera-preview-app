@@ -74,7 +74,7 @@ The same source also builds on [lispnik/ecl](https://github.com/lispnik/ecl)
 
 ```
 make test-ecl    # the suite on ECL
-make app-ecl     # build/ecl/Camera Preview ECL.app
+make app-ecl     # build/ecl/Preview yourself.app
 make run-ecl
 ```
 
@@ -94,7 +94,7 @@ The ECL app is also the one that goes to the Mac App Store, as
 `com.burnsidemk.camera-preview-ecl`:
 
 ```
-make mas-ecl          # build/mas/Camera-Preview-ECL.pkg
+make mas-ecl          # build/mas/Preview-yourself.pkg
 make testflight-ecl   # validate it, then upload it
 ```
 
