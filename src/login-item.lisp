@@ -51,10 +51,17 @@ address is dereferenced: it is the location of the constant, not the constant."
         (objc:invoke-into 'string bundle "bundlePath")))))
 
 (defun sandboxed-p ()
-  "Whether this process runs in the App Sandbox, as a Mac App Store build does.
-The sandbox sets APP_SANDBOX_CONTAINER_ID in the environment of every process
-it contains."
-  (and (uiop:getenv "APP_SANDBOX_CONTAINER_ID") t))
+  "Whether this process runs in the App Sandbox, as the Mac App Store build
+does.
+
+Asked of NSHomeDirectory(), which inside the sandbox is the app's container,
+~/Library/Containers/<identifier>/Data, however the process was started.  Not
+of APP_SANDBOX_CONTAINER_ID: measured, a sandboxed bundle run from a shell has
+no such variable, so the check answered NIL inside the sandbox."
+  (let ((home (cffi:foreign-funcall "NSHomeDirectory" :pointer)))
+    (and (not (cffi:null-pointer-p home))
+         (search "/Library/Containers/" (objc:ns-string-to-string home))
+         t)))
 
 (defun login-item-available-p ()
   "Whether registering is possible here.
