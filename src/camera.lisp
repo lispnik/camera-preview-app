@@ -57,17 +57,49 @@ Terminal, which is one reason the bundle is the real build."
     (3 :authorized)
     (t :unknown)))
 
+(defparameter +device-types+
+  '(("AVCaptureDeviceTypeBuiltInWideAngleCamera") ; the FaceTime camera, 10.15+
+    ;; USB and other external cameras.  Renamed in macOS 14, and the old name
+    ;; deprecated there, so the new one is preferred wherever it exists.
+    ("AVCaptureDeviceTypeExternal" "AVCaptureDeviceTypeExternalUnknown")
+    ("AVCaptureDeviceTypeContinuityCamera"))     ; an iPhone, 14+
+  "The kinds of camera to list, each a list of names for the same kind, newest
+first.  Desk View is left out on purpose: it is a downward view of the desk from
+the iPhone, which is no use for seeing your face.")
+
+(defun %optional-framework-constant (name)
+  "Like FRAMEWORK-CONSTANT, but NIL when this system's AVFoundation lacks NAME."
+  (let ((symbol (cffi:foreign-symbol-pointer name)))
+    (when symbol
+      (cffi:mem-ref symbol :pointer))))
+
+(defun device-types ()
+  "An NSArray of the device type constants this system has, one per kind.
+
+Which constants exist is READ, from the framework actually loaded, rather than
+decided from a version number: a constant is exported from the release that
+introduced it, so its presence is exactly the question being asked."
+  ;; Frameworks first: before AVFoundation is loaded every constant looks
+  ;; absent, and the answer would be an empty list rather than an error.
+  (ensure-frameworks)
+  (let ((array (objc:invoke "NSMutableArray" "array")))
+    (dolist (names +device-types+ array)
+      (let ((type (some #'%optional-framework-constant names)))
+        (when type
+          (objc:invoke array "addObject:" type))))))
+
 (defun video-devices ()
   "Every camera, as a list of AVCaptureDevice pointers.
 
-+devicesWithMediaType: is deprecated in favour of a discovery session, which
-needs the device TYPES named up front -- and the names have changed twice
-(External, ExternalUnknown, ContinuityCamera) across the systems this runs on.
-The deprecated call simply returns everything, which is what a list of cameras
-to choose from wants."
+Through AVCaptureDeviceDiscoverySession, which replaced +devicesWithMediaType:
+(deprecated since 10.15).  A discovery session lists only the kinds of device
+it is asked for -- see +DEVICE-TYPES+."
   (ensure-frameworks)
-  (let ((array (objc:invoke "AVCaptureDevice" "devicesWithMediaType:"
-                            (media-type-video))))
+  (let* ((session (objc:invoke "AVCaptureDeviceDiscoverySession"
+                               "discoverySessionWithDeviceTypes:mediaType:position:"
+                               (device-types) (media-type-video)
+                               0))      ; AVCaptureDevicePositionUnspecified
+         (array (objc:invoke session "devices")))
     (loop for i below (objc:invoke array "count")
           collect (objc:invoke array "objectAtIndex:" i))))
 

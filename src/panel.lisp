@@ -82,6 +82,11 @@ Intel.  Hard-coding either right-aligns the text on the other machine."
     ;; while the permission prompt is up the app is inactive and the panel has
     ;; to stay put.
     (objc:invoke panel "setHidesOnDeactivate:" nil)
+    ;; Dragged by the picture itself: a borderless window has no title bar to
+    ;; grab.  The content view and the layer-hosting view under it both answer
+    ;; YES to -mouseDownCanMoveWindow, being non-opaque NSViews, so a press
+    ;; anywhere on the panel moves it.
+    (objc:invoke panel "setMovableByWindowBackground:" t)
     (objc:invoke panel "setDelegate:" delegate)
     (objc:invoke content "setWantsLayer:" t)
     (let ((layer (objc:invoke content "layer")))

@@ -37,6 +37,7 @@ key handling and the controller's actions are Lisp methods."
                  (:file "geometry")
                  (:file "camera")
                  (:file "panel")
+                 (:file "login-item")
                  (:file "app")))))
 
 (asdf:defsystem #:camera-preview-app/app

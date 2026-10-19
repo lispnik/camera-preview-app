@@ -5,16 +5,19 @@
 (defparameter +usage+
   "camera-preview -- a menu-bar camera preview.
 
-  camera-preview               run until Quit is chosen from the menu
-  camera-preview --show        open the preview straight away
-  camera-preview --timeout 30  quit after 30 seconds, whatever happens
-  camera-preview --cameras     list the cameras and exit
-  camera-preview --status      print the camera permission and exit
-  camera-preview --help        this
+  camera-preview                 run until Quit is chosen from the menu
+  camera-preview --show          open the preview straight away
+  camera-preview --timeout 30    quit after 30 seconds, whatever happens
+  camera-preview --cameras       list the cameras and exit
+  camera-preview --status        print the camera permission and exit
+  camera-preview --login-status  say whether it starts at login, and exit
+  camera-preview --login-add     start it at login, and exit
+  camera-preview --login-remove  stop starting it at login, and exit
+  camera-preview --help          this
 
 Click the camera icon in the menu bar to see yourself; click again, press
 Escape or click elsewhere to put it away.  Right-click for the camera list,
-mirroring and Quit.")
+mirroring, Start at Login and Quit.")
 
 (defun %argument (name arguments)
   (second (member name arguments :test #'string=)))
@@ -40,6 +43,15 @@ debugger: a menu-bar application has no terminal to show one in."
            (finish-and-exit 0))
           ((%flag "--status" arguments)
            (format t "~&camera permission: ~(~A~)~%" (authorization-status))
+           (finish-and-exit 0))
+          ((%flag "--login-status" arguments)
+           (format t "~&login item: ~(~A~)~%" (login-item-status))
+           (finish-and-exit 0))
+          ((%flag "--login-add" arguments)
+           (format t "~&login item: ~(~A~)~%" (register-login-item))
+           (finish-and-exit 0))
+          ((%flag "--login-remove" arguments)
+           (format t "~&login item: ~(~A~)~%" (unregister-login-item))
            (finish-and-exit 0))
           ((%flag "--cameras" arguments)
            (dolist (device (video-devices))

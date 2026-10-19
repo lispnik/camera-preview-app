@@ -69,3 +69,30 @@
   (multiple-value-bind (width height) (unpack-dimensions (logior 1280 (ash 720 32)))
     (is (= 1280 width))
     (is (= 720 height))))
+
+;;; Moved by the user.
+
+(test a-moved-panel-stays-where-it-was-put
+  (let ((frame (moved-frame 200 600 504 284 *visible*)))
+    (is (= 200 (rect-x frame)))
+    (is (= 600 (top-edge frame)))))
+
+(test a-moved-panel-keeps-its-top-when-it-changes-height
+  (let ((wide (moved-frame 200 600 504 284 *visible*))
+        (square (moved-frame 200 600 504 378 *visible*)))
+    (is (= (top-edge wide) (top-edge square)))))
+
+(test a-moved-panel-is-brought-back-on-screen
+  ;; Left where a second display used to be, off to the right.
+  (let ((frame (moved-frame 2500 600 504 284 *visible*)))
+    (is (= (- 1512 8) (right-edge frame))))
+  ;; Dragged down so far that it would run off the bottom.
+  (let ((frame (moved-frame 200 100 504 284 *visible*)))
+    (is (= 8 (rect-y frame))))
+  ;; Dragged up under the menu bar.
+  (let ((frame (moved-frame 200 2000 504 284 *visible*)))
+    (is (= (- 945 8) (top-edge frame)))))
+
+(test which-screen-a-point-is-on
+  (is (rect-contains-point-p *screen* 100 100))
+  (is (not (rect-contains-point-p *screen* -100 100))))

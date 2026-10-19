@@ -38,6 +38,14 @@ click that hid it.  See STATUS-ITEM-CLICKED.")
 (defvar *poll-timer* nil "The NSTimer watching for a permission answer, or NIL.")
 (defvar *hidden-at* 0 "INTERNAL-REAL-TIME the panel last hid itself on losing key.")
 (defvar *menu-devices* '() "The cameras listed in the open menu, by tag.")
+(defvar *placed-frame* nil
+  "The frame PLACE-PANEL last gave the panel.  A move notification that finds
+the panel anywhere else was the user dragging it.")
+
+(defparameter +left-key+ "PanelLeft"
+  "User-defaults key: the left edge of the panel where the user left it.")
+(defparameter +top-key+ "PanelTop"
+  "User-defaults key: the top edge of the panel where the user left it.")
 
 ;;; Menu item tags.  Cameras take 0 upwards.
 (defconstant +tag-mirror+ -1)
@@ -73,19 +81,57 @@ the last one before something went wrong."
                   -- right-click the menu bar icon for a shortcut."))
     (t nil)))
 
+(defun saved-position ()
+  "(LEFT TOP) where the user last dragged the panel, or NIL if they have not."
+  (unless (nullp (objc:invoke (defaults) "objectForKey:" +top-key+))
+    (list (objc:invoke (defaults) "doubleForKey:" +left-key+)
+          (objc:invoke (defaults) "doubleForKey:" +top-key+))))
+
+(defun save-position (left top)
+  (objc:invoke (defaults) "setDouble:forKey:" (float left 1d0) +left-key+)
+  (objc:invoke (defaults) "setDouble:forKey:" (float top 1d0) +top-key+))
+
+(defun forget-position ()
+  (objc:invoke (defaults) "removeObjectForKey:" +left-key+)
+  (objc:invoke (defaults) "removeObjectForKey:" +top-key+))
+
+(defun screen-at (x y)
+  "The NSScreen whose frame holds X, Y, or NIL -- the display it was on may
+have been unplugged since."
+  (let ((screens (objc:invoke "NSScreen" "screens")))
+    (loop for i below (objc:invoke screens "count")
+          for screen = (objc:invoke screens "objectAtIndex:" i)
+          when (rect-contains-point-p (objc:invoke screen "frame") x y)
+            return screen)))
+
 (defun place-panel ()
-  "Size the panel to the camera and hang it under the status item."
+  "Size the panel to the camera and put it where it goes: where the user last
+dragged it, or else hanging under the status item.
+
+The SIZE always comes from PANEL-FRAME -- a third of the width of the screen
+the status item is on, in the camera's shape -- so a moved panel is still the
+right size for the camera that is attached now.  Only the position is kept."
   (let* ((item-window (objc:invoke (button) "window"))
          (screen (let ((screen (objc:invoke item-window "screen")))
                    (if (nullp screen)
                        (objc:invoke "NSScreen" "mainScreen")
-                       screen))))
-    (objc:invoke *panel* "setFrame:display:"
-                 (panel-frame (objc:invoke item-window "frame")
-                              (objc:invoke screen "frame")
-                              (objc:invoke screen "visibleFrame")
-                              :aspect (or (camera-aspect) +default-aspect+))
-                 t)
+                       screen)))
+         (under-item (panel-frame (objc:invoke item-window "frame")
+                                  (objc:invoke screen "frame")
+                                  (objc:invoke screen "visibleFrame")
+                                  :aspect (or (camera-aspect) +default-aspect+)))
+         (frame (let ((position (saved-position)))
+                  (if position
+                      (destructuring-bind (left top) position
+                        ;; Clamped to the screen the corner is on, or to the
+                        ;; status item's screen if that display has gone.
+                        (moved-frame left top
+                                     (rect-width under-item) (rect-height under-item)
+                                     (objc:invoke (or (screen-at left top) screen)
+                                                  "visibleFrame")))
+                      under-item))))
+    (setf *placed-frame* frame)
+    (objc:invoke *panel* "setFrame:display:" frame t)
     (layout-message)))
 
 (defun activate-application ()
@@ -211,6 +257,22 @@ because the user clicked into another application, which already has it."
   (declare (ignore sender))
   (show-preview))
 
+(objc:define-objc-method ("windowDidMove:" :void)
+    ((self controller) (notification objc:objc-object-pointer))
+  (declare (ignore notification))
+  ;; Sent for our own -setFrame:display: as well as for a drag, so a move is
+  ;; only the user's if the panel is no longer where PLACE-PANEL put it.
+  ;; Compared rather than flagged around the call: AppKit does not promise to
+  ;; post the notification inside -setFrame:display: rather than after it.
+  (when (and *panel* *placed-frame*)
+    (let ((frame (objc:invoke *panel* "frame")))
+      (unless (and (= (rect-x frame) (rect-x *placed-frame*))
+                   (= (rect-y frame) (rect-y *placed-frame*)))
+        (let ((top (+ (rect-y frame) (rect-height frame))))
+          (save-position (rect-x frame) top)
+          (setf *placed-frame* frame)
+          (note "moved to ~D, ~D" (round (rect-x frame)) (round top)))))))
+
 (objc:define-objc-method ("windowDidResignKey:" :void)
     ((self controller) (notification objc:objc-object-pointer))
   (declare (ignore notification))
@@ -258,8 +320,21 @@ because the user clicked into another application, which already has it."
     (objc:invoke menu "addItem:" (%menu-item "Mirror Image" "toggleMirror:"
                                              :tag +tag-mirror+
                                              :state (if *mirrored* 1 0)))
+    ;; Only when there is a position to reset, so the item's presence says
+    ;; the panel has been moved.
+    (when (saved-position)
+      (objc:invoke menu "addItem:" (%menu-item "Reset Position" "resetPosition:")))
     (objc:invoke menu "addItem:" (%menu-item "Camera Privacy Settings…"
                                              "openPrivacySettings:"))
+    ;; Offered only from a bundle; the loose binary has no .app for the login
+    ;; item to point at, so rather than an item that always fails, none.
+    ;; The checkmark is read from the list each time the menu opens, not
+    ;; remembered: the user can remove it in System Settings without telling us.
+    (when (login-item-available-p)
+      (objc:invoke menu "addItem:" (objc:invoke "NSMenuItem" "separatorItem"))
+      (objc:invoke menu "addItem:" (%menu-item "Start at Login" "toggleLoginItem:"
+                                               :state (if (eq (login-item-status) :enabled)
+                                                          1 0))))
     (objc:invoke menu "addItem:" (objc:invoke "NSMenuItem" "separatorItem"))
     (objc:invoke menu "addItem:" (%menu-item "Quit Camera Preview" "quit:" :key "q"))
     menu))
@@ -295,6 +370,22 @@ that long and the next left click is an action again."
   (declare (ignore sender))
   (objc:invoke (objc:invoke "NSWorkspace" "sharedWorkspace") "openURL:"
                (objc:invoke "NSURL" "URLWithString:" +privacy-settings-url+)))
+
+(objc:define-objc-method ("resetPosition:" :void)
+    ((self controller) (sender objc:objc-object-pointer))
+  (declare (ignore sender))
+  (forget-position)
+  (note "position reset")
+  (when (panel-visible-p)
+    (place-panel)))
+
+(objc:define-objc-method ("toggleLoginItem:" :void)
+    ((self controller) (sender objc:objc-object-pointer))
+  (declare (ignore sender))
+  (note "login item: ~(~A~)"
+        (if (eq (login-item-status) :enabled)
+            (unregister-login-item)
+            (register-login-item))))
 
 (objc:define-objc-method ("quit:" :void)
     ((self controller) (sender objc:objc-object-pointer))
@@ -341,12 +432,30 @@ that long and the next left click is an action again."
                                                   +event-mask-right-mouse-down+)))
     item))
 
+(defun exit-on-sigterm ()
+  "Make SIGTERM end the process at once.
+
+SIGTERM is how `kill', launchd, and logout or shutdown ask an application to
+quit.  SBCL's own handler answers it with SB-EXT:EXIT, which UNWINDS -- and the
+main thread's stack runs through -[NSApplication run], foreign frames a Lisp
+unwind cannot pass through.  Measured: the process ignored `kill' outright and
+had to be killed with -9, which logout would have waited on.
+
+So the handler exits without unwinding.  Nothing is lost: there is no unsaved
+state, preferences are written as they change, and the camera is released by
+the kernel when the process goes -- its light is off the moment it exits."
+  (sb-sys:enable-interrupt sb-unix:sigterm
+                           (lambda (signal info context)
+                             (declare (ignore signal info context))
+                             (sb-ext:exit :code 0 :abort t))))
+
 (defun run (&key timeout show)
   "Put the camera icon in the menu bar and run until Quit.  Returns T.
 
 Must be called on thread 1.  TIMEOUT, in seconds, quits anyway, so a test or a
 demo cannot wedge.  SHOW opens the preview as soon as the item is up."
   (ensure-frameworks)
+  (exit-on-sigterm)
   (objc.runloop:shared-application)
   (objc.runloop:set-activation-policy +activation-policy-accessory+)
   (setf *controller* (make-instance 'controller)

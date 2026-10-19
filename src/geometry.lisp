@@ -81,3 +81,27 @@ RAX on x86-64 -- so declaring the result :UINT64 is the ABI, not a trick, and on
 a little-endian machine the first field, the width, is the low half."
   (values (ldb (byte 32 0) packed)
           (ldb (byte 32 32) packed)))
+
+(defun rect-contains-point-p (r x y)
+  (and (<= (rect-x r) x (+ (rect-x r) (rect-width r)))
+       (<= (rect-y r) y (+ (rect-y r) (rect-height r)))))
+
+(defun moved-frame (left top width height visible &key (margin +margin+))
+  "The panel's frame when the user has dragged it: its top-left corner at LEFT,
+TOP, WIDTH by HEIGHT, slid back inside VISIBLE as far as it must be.
+
+The top-left corner is what is remembered, not the origin, because the origin
+is the BOTTOM left in Cocoa and the height changes with the camera: anchoring
+the bottom would make a panel moved under the menu bar grow up into it when a
+taller camera was chosen.  Clamped because the screen it was left on may since
+have shrunk, moved or been unplugged.  If it is wider or taller than the
+screen, the top-left edge wins, which keeps the picture's top -- your face --
+in view."
+  (let* ((left-limit (+ (rect-x visible) margin))
+         (right-limit (- (+ (rect-x visible) (rect-width visible)) margin))
+         (bottom-limit (+ (rect-y visible) margin))
+         (top-limit (- (+ (rect-y visible) (rect-height visible)) margin))
+         (x (max left-limit (min left (- right-limit width))))
+         (top (min top-limit (max top (+ bottom-limit height))))
+         (height (round height)))
+    (rect (round x) (- (round top) height) (round width) height)))

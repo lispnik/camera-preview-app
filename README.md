@@ -8,11 +8,18 @@ camera drops down below it: mirrored, in the camera's own aspect ratio, about a
 third of the screen wide. Click the icon again, press Escape, or click anywhere
 else, and it goes away and the camera turns off.
 
+Drag the picture to move it; it reopens where you left it, kept on screen if
+your displays change.
+
 Right-click (or control-click) the icon for:
 
 - the list of cameras, to choose which one to show (remembered)
 - **Mirror Image** — on by default; turn it off to see what the meeting sees
+- **Reset Position** — back under the icon; shown once you have moved it
 - **Camera Privacy Settings…** — if you said no to the permission prompt
+- **Start at Login** — only shown when running from the bundle; the checkmark
+  reflects System Settings › General › Login Items, so removing it there is
+  noticed
 - **Quit**
 
 Built on [objc](https://github.com/lispnik/objc) and packaged with
@@ -59,7 +66,13 @@ Camera Preview.app/Contents/MacOS/camera-preview --show         open the preview
 Camera Preview.app/Contents/MacOS/camera-preview --timeout 30   quit after 30 seconds
 Camera Preview.app/Contents/MacOS/camera-preview --cameras      list cameras and exit
 Camera Preview.app/Contents/MacOS/camera-preview --status       print the camera permission
+Camera Preview.app/Contents/MacOS/camera-preview --login-status say whether it starts at login
+Camera Preview.app/Contents/MacOS/camera-preview --login-add    start it at login
+Camera Preview.app/Contents/MacOS/camera-preview --login-remove stop starting it at login
 ```
+
+A login item records the bundle's path, so `make install` first and enable it
+from the installed copy, not from `build/`, which `make clean` deletes.
 
 Inside the bundle, output goes to `~/Library/Logs/Camera Preview.log`.
 
@@ -70,6 +83,7 @@ Inside the bundle, output goes to `~/Library/Logs/Camera Preview.log`.
 | `src/geometry.lisp` | where the panel goes and how big it is; pure, and tested |
 | `src/camera.lisp` | `AVCaptureSession`, the preview layer, devices, permission |
 | `src/panel.lisp` | the borderless `NSPanel` subclass that holds the picture |
+| `src/login-item.lisp` | Start at Login, via `LSSharedFileList` (see its header for why not `SMAppService`) |
 | `src/app.lisp` | the status item, its menu, showing and hiding |
 | `src/main.lisp` | the entry point |
 | `tools/icon.lisp` | draws `res/icon.png` (`make icon`) |
