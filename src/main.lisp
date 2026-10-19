@@ -13,7 +13,8 @@
   camera-preview --login-status  say whether it starts at login, and exit
   camera-preview --login-add     start it at login, and exit
   camera-preview --login-remove  stop starting it at login, and exit
-  camera-preview --help          this
+  camera-preview -h             this  (not --help: in the SBCL bundle the
+                                 runtime takes --help for itself)
 
 Click the camera icon in the menu bar to see yourself; click again, press
 Escape or click elsewhere to put it away.  Right-click for the camera list,

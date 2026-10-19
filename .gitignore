@@ -5,3 +5,5 @@ dist/
 ocicl/
 .DS_Store
 local.mk
+bundle.log
+help.out

@@ -58,16 +58,24 @@ asdf-macos-app's toplevel does this for the SBCL bundle; the ECL bundle is
 assembled without it, and a process LaunchServices starts has /dev/null for
 standard output -- so without this every line the application writes is lost.
 Only when output is not a terminal, so running the executable from a shell
-still prints there."
+still prints there.
+
+MACOS_APP_LOG, if set, names the file instead -- the variable asdf-macos-app's
+toplevel honours in the SBCL bundle, so both are pointed elsewhere the same
+way.  CI sets it to /dev/stderr: the sandboxed bundle's own log is in its
+container, which nothing else may read."
   #+ecl
-  (unless (= 1 (cffi:foreign-funcall "isatty" :int 1 :int))
-    (let ((name (ignore-errors
-                 (objc:invoke-into 'string (objc:invoke "NSBundle" "mainBundle")
-                                   "objectForInfoDictionaryKey:" "CFBundleName"))))
-      (when (and name (plusp (length name)))
-        (let ((stream (open (merge-pathnames (format nil "Library/Logs/~A.log" name)
-                                             (user-homedir-pathname))
-                            :direction :output :if-exists :append
-                            :if-does-not-exist :create)))
-          (setf *standard-output* stream
-                *error-output* stream))))))
+  (let ((override (uiop:getenv "MACOS_APP_LOG")))
+    (unless (and (not override) (= 1 (cffi:foreign-funcall "isatty" :int 1 :int)))
+      (let* ((name (ignore-errors
+                    (objc:invoke-into 'string (objc:invoke "NSBundle" "mainBundle")
+                                      "objectForInfoDictionaryKey:" "CFBundleName")))
+             (path (cond ((and override (plusp (length override))) override)
+                         ((and name (plusp (length name)))
+                          (merge-pathnames (format nil "Library/Logs/~A.log" name)
+                                           (user-homedir-pathname))))))
+        (when path
+          (let ((stream (open path :direction :output :if-exists :append
+                                   :if-does-not-exist :create)))
+            (setf *standard-output* stream
+                  *error-output* stream)))))))

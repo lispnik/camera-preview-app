@@ -1,0 +1,272 @@
+# macOS only: this is a macOS menu-bar application that binds AppKit and
+# AVFoundation, and nothing here could run anywhere else.
+#
+# THE DEPENDENCIES ARE SIBLING CHECKOUTS, NOT PACKAGES.  objc and
+# asdf-macos-app are checked out beside this repository, which is the layout
+# the Makefile expects locally, and every Lisp dependency is restored into the
+# objc checkout from its ocicl.csv -- see tools/ci-ocicl.sh.  Both are tracked
+# at their default branches rather than pinned: they are developed together
+# with this, so a break there that breaks this is worth being told about.
+#
+# WHAT A HEADLESS RUN CAN AND CANNOT PROVE.  A runner has no window server and
+# no camera, so nothing here puts an icon in a menu bar or shows a picture --
+# that is checked by hand.  What does run: the geometry suite, on both Lisps;
+# both bundles built, signed (ad hoc -- there is no identity on a runner) and
+# verified; the Info.plist keys and entitlements the camera depends on, which
+# fail SILENTLY when wrong (no prompt, no picture, no error); and each
+# bundled executable started, which is where a dump that cannot restore, or an
+# ECL program that still needs its install directory, would show.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  OBJC_REPO: lispnik/objc
+  OBJC_REF: master
+  MACOS_APP_REPO: lispnik/asdf-macos-app
+  # main, not master: the repositories do not agree on a default branch name.
+  MACOS_APP_REF: main
+
+jobs:
+  sbcl:
+    name: sbcl · ${{ matrix.os }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            arch: arm64
+          - os: macos-26-intel
+            arch: x86-64
+    env:
+      DIRS: OBJC_DIR=${{ github.workspace }}/objc MACOS_APP_DIR=${{ github.workspace }}/asdf-macos-app
+
+    steps:
+      - name: Check out camera-preview-app
+        uses: actions/checkout@v5
+        with:
+          path: camera-preview-app
+
+      - name: Check out objc beside it
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.OBJC_REPO }}
+          ref: ${{ env.OBJC_REF }}
+          path: objc
+
+      - name: Check out asdf-macos-app beside it
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.MACOS_APP_REPO }}
+          ref: ${{ env.MACOS_APP_REF }}
+          path: asdf-macos-app
+
+      - name: Install SBCL
+        run: brew install sbcl
+
+      - name: Install ocicl and restore dependencies
+        run: |
+          camera-preview-app/tools/ci-ocicl.sh "$GITHUB_WORKSPACE/objc"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: The library loads without asdf-macos-app
+        # The bundle system is in its own .asd because :DEFSYSTEM-DEPENDS-ON is
+        # resolved when an .asd is READ.  Only a registry WITHOUT asdf-macos-app
+        # catches a regression there, so this step builds one.
+        working-directory: camera-preview-app
+        run: |
+          sbcl --non-interactive --no-userinit --no-sysinit \
+            --eval '(require :asdf)' \
+            --eval '(asdf:initialize-source-registry (list :source-registry (list :tree (truename "./")) (list :tree (truename (format nil "~a/objc/" (uiop:getenv "GITHUB_WORKSPACE")))) :ignore-inherited-configuration))' \
+            --eval '(asdf:load-system :camera-preview-app)'
+
+      - name: Run tests
+        working-directory: camera-preview-app
+        run: make test $DIRS
+
+      - name: Build the .app bundle
+        working-directory: camera-preview-app
+        run: make app $DIRS
+
+      - name: Check what the camera depends on
+        # Each of these fails silently in the field: without the usage string
+        # TCC kills the process on first use of the camera, without the
+        # entitlement the hardened runtime refuses it with no prompt, and
+        # without LSUIElement the menu-bar app gets a Dock icon.
+        working-directory: camera-preview-app
+        run: |
+          app="build/Camera Preview.app"
+          plist="$app/Contents/Info.plist"
+          plutil -lint "$plist"
+          test "$(plutil -extract LSUIElement raw "$plist")" = true \
+            || { echo "::error::LSUIElement is not true" >&2; exit 1; }
+          plutil -extract NSCameraUsageDescription raw "$plist" >/dev/null \
+            || { echo "::error::no NSCameraUsageDescription" >&2; exit 1; }
+          codesign --verify --deep --strict "$app"
+          entitlements=$(codesign -d --entitlements - --xml "$app" | plutil -p -)
+          echo "$entitlements"
+          echo "$entitlements" | grep -q '"com.apple.security.device.camera" => true' \
+            || { echo "::error::no camera entitlement" >&2; exit 1; }
+
+      - name: Start the bundled executable
+        # A dumped image has to restore objc's classes and reopen its
+        # libraries; this is where it shows if it cannot.  Inside the bundle
+        # output goes to a log by design, so the log is what is checked.  -h,
+        # not --help: SBCL's runtime takes --help for itself before the
+        # application sees it.
+        working-directory: camera-preview-app
+        run: |
+          export MACOS_APP_LOG="$PWD/bundle.log"
+          exe="build/Camera Preview.app/Contents/MacOS/camera-preview"
+          "$exe" -h
+          "$exe" --status
+          "$exe" --cameras       # a runner has none; it must still exit 0
+          cat "$MACOS_APP_LOG"
+          grep -q "a menu-bar camera preview" "$MACOS_APP_LOG" \
+            || { echo "::error::--help wrote nothing to the log" >&2; exit 1; }
+          grep -q "camera permission:" "$MACOS_APP_LOG" \
+            || { echo "::error::--status wrote nothing to the log" >&2; exit 1; }
+
+  ecl:
+    name: ecl · macos-latest (arm64)
+    runs-on: macos-latest
+    # Building ECL is the long pole, about six minutes cold; it is cached by
+    # the fork's commit, so most runs skip it.
+    timeout-minutes: 45
+    env:
+      ECL_REPOSITORY: https://github.com/lispnik/ecl.git
+      ECL_BRANCH: develop
+      DIRS: OBJC_DIR=${{ github.workspace }}/objc MACOS_APP_DIR=${{ github.workspace }}/asdf-macos-app ECL_PREFIX=/Users/runner/.local/ecl
+
+    steps:
+      - name: Check out camera-preview-app
+        uses: actions/checkout@v5
+        with:
+          path: camera-preview-app
+
+      - name: Check out objc beside it
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.OBJC_REPO }}
+          ref: ${{ env.OBJC_REF }}
+          path: objc
+
+      - name: Check out asdf-macos-app beside it
+        # The ECL bundle borrows the SBCL bundle's Info.plist and icon, so the
+        # SBCL bundle is built here too.
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.MACOS_APP_REPO }}
+          ref: ${{ env.MACOS_APP_REF }}
+          path: asdf-macos-app
+
+      # lispnik/ecl rather than Homebrew's, which cannot resolve a foreign
+      # symbol through :default on Darwin -- so CFFI resolves nothing.  Built
+      # from source, the same way objc's own ECL workflow does, and cached by
+      # the commit the branch resolves to at the start of the run.
+      - name: Resolve the ECL branch to a commit
+        id: ecl
+        run: |
+          sha=$(git ls-remote "$ECL_REPOSITORY" "refs/heads/$ECL_BRANCH" | cut -f1)
+          test -n "$sha" || { echo "::error::$ECL_REPOSITORY has no branch $ECL_BRANCH" >&2; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "$ECL_BRANCH is $sha"
+
+      - name: Cache the built ECL
+        id: ecl-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/ecl
+          key: ecl-${{ runner.os }}-${{ runner.arch }}-${{ steps.ecl.outputs.sha }}
+
+      - name: Build ECL from source
+        if: steps.ecl-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          brew install gmp libffi automake autoconf libtool texinfo
+          git clone "$ECL_REPOSITORY" "$RUNNER_TEMP/ecl"
+          cd "$RUNNER_TEMP/ecl"
+          git checkout "${{ steps.ecl.outputs.sha }}"
+          ./configure --prefix="$HOME/.local/ecl" --enable-gmp=included
+          make -j"$(sysctl -n hw.ncpu)"
+          make install
+
+      - name: Install SBCL
+        # For ocicl's installer, and for the SBCL bundle the ECL one borrows from.
+        run: brew install sbcl
+
+      - name: Install ocicl and restore dependencies
+        run: |
+          camera-preview-app/tools/ci-ocicl.sh "$GITHUB_WORKSPACE/objc"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run tests on ECL
+        working-directory: camera-preview-app
+        run: make test-ecl $DIRS
+
+      - name: Build the ECL bundle
+        working-directory: camera-preview-app
+        run: make app-ecl $DIRS
+
+      - name: Check the bundle is what the App Store build is made from
+        # mas-ecl only re-signs this bundle, so what is wrong here is wrong in
+        # TestFlight -- and each of these was wrong once, and found the hard way.
+        working-directory: camera-preview-app
+        run: |
+          app="build/ecl/Preview yourself.app"
+          exe="$app/Contents/MacOS/camera-preview"
+          plist="$app/Contents/Info.plist"
+          codesign --verify --deep --strict "$app"
+          plutil -p "$plist"
+
+          entitlements=$(codesign -d --entitlements - --xml "$app" | plutil -p -)
+          echo "$entitlements"
+          for key in com.apple.security.app-sandbox com.apple.security.device.camera; do
+            echo "$entitlements" | grep -q "\"$key\" => true" \
+              || { echo "::error::no $key entitlement" >&2; exit 1; }
+          done
+          if echo "$entitlements" | grep -q "com.apple.security.cs."; then
+            echo "::error::hardened-runtime exceptions in the ECL bundle; it needs none" >&2; exit 1
+          fi
+
+          # Sandboxed, a process that links no framework at exec is refused
+          # LaunchServices and -[NSApplication init] aborts.
+          otool -L "$exe" | grep -q "AppKit.framework" \
+            || { echo "::error::AppKit is not linked at launch" >&2; exit 1; }
+
+          # libecl from the bundle, never from the ECL install.
+          test -f "$app/Contents/Frameworks/$(otool -L "$exe" | sed -n 's|.*@rpath/\(libecl[^ ]*\).*|\1|p')" \
+            || { echo "::error::libecl is not in Frameworks/" >&2; exit 1; }
+          rpaths=$(otool -l "$exe" | awk '/cmd LC_RPATH/ { getline; getline; print $2 }')
+          echo "LC_RPATH: $rpaths"
+          test "$rpaths" = "@executable_path/../Frameworks" \
+            || { echo "::error::LC_RPATH is not only the bundle's Frameworks/" >&2; exit 1; }
+
+          # The minimum system is the executable's own, and App Store Connect
+          # refuses an arm64-only app that declares less than 12.0.
+          minos=$(otool -l "$exe" | sed -n '/LC_BUILD_VERSION/,/minos/s/.*minos //p' | head -1)
+          test "$(plutil -extract LSMinimumSystemVersion raw "$plist")" = "$minos" \
+            || { echo "::error::LSMinimumSystemVersion is not the executable's minos ($minos)" >&2; exit 1; }
+
+      - name: Start the sandboxed executable without ECL's install directory
+        # The program is built to need nothing from ECL's install directory --
+        # no CMP module, no help.doc -- and this is the check: ECLDIR pointed at
+        # an empty directory.  MACOS_APP_LOG sends its output here rather than
+        # into the sandbox container's log, which this shell may not read.
+        working-directory: camera-preview-app
+        run: |
+          exe="build/ecl/Preview yourself.app/Contents/MacOS/camera-preview"
+          mkdir -p "$RUNNER_TEMP/empty-ecldir"
+          export ECLDIR="$RUNNER_TEMP/empty-ecldir/" MACOS_APP_LOG=/dev/stderr
+          "$exe" -h 2>&1 | tee help.out
+          grep -q "a menu-bar camera preview" help.out \
+            || { echo "::error::the ECL executable did not start" >&2; exit 1; }
+          "$exe" --status
+          "$exe" --cameras       # a runner has none; it must still exit 0
