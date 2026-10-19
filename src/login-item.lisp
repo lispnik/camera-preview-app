@@ -50,10 +50,21 @@ address is dereferenced: it is the location of the constant, not the constant."
       (unless (nullp (objc:invoke bundle "bundleIdentifier"))
         (objc:invoke-into 'string bundle "bundlePath")))))
 
+(defun sandboxed-p ()
+  "Whether this process runs in the App Sandbox, as a Mac App Store build does.
+The sandbox sets APP_SANDBOX_CONTAINER_ID in the environment of every process
+it contains."
+  (and (uiop:getenv "APP_SANDBOX_CONTAINER_ID") t))
+
 (defun login-item-available-p ()
-  "Whether registering is possible here.  NIL from the loose binary: an entry
-naming a bare executable would start it with no bundle, and so no camera."
-  (and (bundle-path) t))
+  "Whether registering is possible here.
+
+NIL from the loose binary: an entry naming a bare executable would start it
+with no bundle, and so no camera.  And NIL in the sandbox, which refuses
+LSSharedFileList -- the App Store way is SMAppService, which did not work for
+an SBCL bundle (see the header), so the store build simply has no Start at
+Login rather than a menu item that always fails."
+  (and (not (sandboxed-p)) (bundle-path) t))
 
 (defmacro with-login-items ((list) &body body)
   "Bind LIST to the session's login item list for the extent of BODY."

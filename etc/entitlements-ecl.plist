@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The ECL bundle is sandboxed in every build, not only the App Store
+	     one, so what runs locally is what TestFlight runs. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.device.camera</key>
+	<true/>
+	<!-- No JIT or unsigned-executable-memory keys, unlike the SBCL bundle:
+	     ECL's code is in the Mach-O, run-time COMPILE is the bytecode compiler,
+	     and Lisp methods are libffi closures, which Apple's libffi makes from
+	     trampoline pages that are already signed. -->
+</dict>
+</plist>

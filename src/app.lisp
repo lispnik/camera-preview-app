@@ -432,23 +432,6 @@ that long and the next left click is an action again."
                                                   +event-mask-right-mouse-down+)))
     item))
 
-(defun exit-on-sigterm ()
-  "Make SIGTERM end the process at once.
-
-SIGTERM is how `kill', launchd, and logout or shutdown ask an application to
-quit.  SBCL's own handler answers it with SB-EXT:EXIT, which UNWINDS -- and the
-main thread's stack runs through -[NSApplication run], foreign frames a Lisp
-unwind cannot pass through.  Measured: the process ignored `kill' outright and
-had to be killed with -9, which logout would have waited on.
-
-So the handler exits without unwinding.  Nothing is lost: there is no unsaved
-state, preferences are written as they change, and the camera is released by
-the kernel when the process goes -- its light is off the moment it exits."
-  (sb-sys:enable-interrupt sb-unix:sigterm
-                           (lambda (signal info context)
-                             (declare (ignore signal info context))
-                             (sb-ext:exit :code 0 :abort t))))
-
 (defun run (&key timeout show)
   "Put the camera icon in the menu bar and run until Quit.  Returns T.
 

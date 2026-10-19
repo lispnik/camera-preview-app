@@ -11,3 +11,14 @@
 # "Apple Development" is enough for your own machine.
 
 SIGN_IDENTITY = Developer ID Application: Your Name (TEAMID)
+
+# The Mac App Store build of the ECL app (`make mas-ecl', `make testflight-ecl').
+# The profile is a Mac App Store one for the bundle identifier in the Makefile;
+# the key id and issuer are an App Store Connect API key's, whose .p8 lives in
+# ~/.appstoreconnect/private_keys/ where altool looks for it.
+#
+# MAS_IDENTITY = Apple Distribution: Your Name (TEAMID)
+# MAS_INSTALLER_IDENTITY = 3rd Party Mac Developer Installer: Your Name (TEAMID)
+# MAS_PROFILE = $(HOME)/path/to/profile.provisionprofile
+# ASC_KEY_ID = XXXXXXXXXX
+# ASC_ISSUER_ID = xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

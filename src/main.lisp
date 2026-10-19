@@ -25,17 +25,12 @@ mirroring, Start at Login and Quit.")
 (defun %flag (name arguments)
   (member name arguments :test #'string=))
 
-(defun finish-and-exit (code)
-  "Flush and exit.  Inside a bundle standard output is a log file, and what
-SB-EXT:EXIT does with a half-full buffer is not something to rely on."
-  (finish-output *standard-output*)
-  (finish-output *error-output*)
-  (sb-ext:exit :code code))
-
 (defun main ()
   "The entry point.  Errors become a message and a non-zero exit, never the
 debugger: a menu-bar application has no terminal to show one in."
-  (let ((arguments (rest sb-ext:*posix-argv*)))
+  (ensure-frameworks)
+  (redirect-output-to-log)
+  (let ((arguments (command-arguments)))
     (handler-case
         (cond
           ((or (%flag "--help" arguments) (%flag "-h" arguments))
@@ -62,7 +57,7 @@ debugger: a menu-bar application has no terminal to show one in."
                 :timeout (let ((seconds (%argument "--timeout" arguments)))
                            (when seconds (parse-integer seconds))))
            (finish-and-exit 0)))
-      (stream-error () (sb-ext:exit :code 0 :abort t))
+      (stream-error () (exit-now 0))
       (error (condition)
         (format *error-output* "~&camera-preview: ~A~%" condition)
         (finish-and-exit 1)))))

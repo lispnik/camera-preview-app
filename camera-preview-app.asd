@@ -33,6 +33,7 @@ key handling and the controller's actions are Lisp methods."
                 :serial t
                 :components
                 ((:file "package")
+                 (:file "portable")
                  (:file "frameworks")
                  (:file "geometry")
                  (:file "camera")

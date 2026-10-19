@@ -67,6 +67,73 @@ distribution; "Apple Development" is enough for your own machine. Signing with
 a certificate timestamps the signature, so `make app` then needs the network.
 `make app SIGN_IDENTITY="…"` works for a one-off.
 
+## Building with ECL
+
+The same source also builds on [lispnik/ecl](https://github.com/lispnik/ecl)
+(stock ECL cannot resolve foreign symbols the way CFFI needs on Darwin):
+
+```
+make test-ecl    # the suite on ECL
+make app-ecl     # build/ecl/Camera Preview ECL.app
+make run-ecl
+```
+
+`ECL_PREFIX` says where that ECL is installed (default
+`~/Projects/ecl/ecl-native`). asdf-macos-app is SBCL-only, so the ECL bundle is
+assembled by the Makefile around a program `tools/build-ecl.lisp` links, with
+the SBCL bundle's Info.plist and icon under its own identifier
+(`com.lispnik.camera-preview-ecl`) so both can be installed at once. It
+carries `libecl` and nothing else from ECL: the program switches `compile` to
+ECL's bytecode compiler (objc compiles per method signature at run time, and
+the native compiler would need clang and ECL's install directory) and detaches
+`SYS:help.doc` from the documentation pool.
+
+### The Mac App Store and TestFlight
+
+The ECL app is also the one that goes to the Mac App Store, as
+`com.burnsidemk.camera-preview-ecl`:
+
+```
+make mas-ecl          # build/mas/Camera-Preview-ECL.pkg
+make testflight-ecl   # validate it, then upload it
+```
+
+It needs, in `local.mk` (see `local.mk.example`), an Apple Distribution and a
+Mac Installer Distribution identity, a Mac App Store provisioning profile for
+that identifier, and an App Store Connect API key. The store build is the
+local one re-signed: the ECL bundle is sandboxed in every build, so
+`make run-ecl` runs what TestFlight runs. Start at Login is absent from it,
+since the sandbox refuses the API it uses.
+
+Two things the sandbox required, both measured:
+
+- **AppKit is linked at launch.** A sandboxed process may reach LaunchServices
+  only if a framework that checks in with it was loaded at exec. An ECL
+  program links only `libSystem` and objc `dlopen`s AppKit later, so
+  `-[NSApplication init]` was refused and aborted the process — as did a C
+  program that `dlopen`ed AppKit and linked nothing else.
+- **`LSMinimumSystemVersion` is read from the executable**, not inherited from
+  the SBCL bundle's 11.0: ECL here is built for the macOS it was built on, and
+  App Store Connect refuses an arm64-only app declaring less than 12.0.
+
+Measured on an Apple silicon Mac, the two bundles one after the other, idle in the
+menu bar:
+
+| | SBCL 2.6.8 | lispnik/ecl 26.5.5 |
+|---|---|---|
+| bundle on disk | 57 MB (a 50 MB core) | 8.6 MB |
+| start to exit, warm | 0.04 s | 0.25 s |
+| CPU to start up | 0.16 s | 0.45 s |
+| memory footprint, idle | 74 MB | 31 MB |
+| CPU, 30 s idle | ~0.01 s | ~0.01 s |
+| threads, idle | 7 | 11 |
+
+SBCL maps a saved image and is running almost at once; ECL has no image, and
+re-runs every file's top-level forms at each start. ECL is a seventh the size
+and less than half the memory. Neither does anything while idle, and with the
+preview open the video goes from AVFoundation to Core Animation without passing
+through Lisp in either.
+
 ## Why a bundle
 
 macOS grants the camera to an *application*, which means a bundle with
@@ -103,8 +170,10 @@ Inside the bundle, output goes to `~/Library/Logs/Camera Preview.log`.
 | `src/panel.lisp` | the borderless `NSPanel` subclass that holds the picture |
 | `src/login-item.lisp` | Start at Login, via `LSSharedFileList` (see its header for why not `SMAppService`) |
 | `src/app.lisp` | the status item, its menu, showing and hiding |
+| `src/portable.lisp` | arguments, exit, SIGTERM and logging, for SBCL and ECL |
 | `src/main.lisp` | the entry point |
 | `tools/icon.lisp` | draws `res/icon.png` (`make icon`) |
+| `tools/build-ecl.lisp` | links the ECL executable (`make app-ecl`) |
 
 No frame passes through Lisp: the video goes straight from AVFoundation into a
 Core Animation layer. The session is started and stopped from an
